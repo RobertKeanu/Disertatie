@@ -5,10 +5,12 @@ import java.util.List;
 
 public interface LoadBalancingPolicy {
     Vm selectVm(List<Vm> availableVms, int requestIndex, String sourceIp);
+
     default Vm selectVm(List<Vm> availableVms, int requestIndex, String sourceIp,
                         long cloudletLength, double arrivalTime) {
         return selectVm(availableVms, requestIndex, sourceIp);
     }
+
     String getName();
     default void reset() {}
     default void reset(long seed) { reset(); }

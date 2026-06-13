@@ -27,6 +27,7 @@ public class AggregatedMetrics {
     private final DescriptiveStatistics loadImbalance = new DescriptiveStatistics();
     private final DescriptiveStatistics requestImbalance = new DescriptiveStatistics();
     private final DescriptiveStatistics workImbalance = new DescriptiveStatistics();
+    private final DescriptiveStatistics completedRequests = new DescriptiveStatistics();
 
     public AggregatedMetrics(String algorithmName, List<MetricsCollector> runResults) {
         this.algorithmName = algorithmName;
@@ -41,6 +42,7 @@ public class AggregatedMetrics {
             loadImbalance.addValue(m.getNormalizedLoadImbalance());
             requestImbalance.addValue(m.getRequestImbalance());
             workImbalance.addValue(m.getWorkImbalance());
+            completedRequests.addValue(m.getTotalRequests());
         }
     }
 
@@ -75,6 +77,10 @@ public class AggregatedMetrics {
 
     public double getWorkImbalanceMean()   { return workImbalance.getMean(); }
     public double getWorkImbalanceStdDev() { return workImbalance.getStandardDeviation(); }
+
+    public double getCompletedRequestsMean()   { return completedRequests.getMean(); }
+    public double getCompletedRequestsStdDev() { return completedRequests.getStandardDeviation(); }
+    public double getCompletedRequestsMin()    { return completedRequests.getMin(); }
 
     // ── Console output ────────────────────────────────────────────────────────
 

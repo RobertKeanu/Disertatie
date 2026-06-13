@@ -4,8 +4,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.unibuc.algorithms.IpHashPolicy;
 import org.unibuc.algorithms.LeastConnectionsPolicy;
+import org.unibuc.algorithms.LeastReponseTimePolicy;
+import org.unibuc.algorithms.P2CLRTPolicy;
 import org.unibuc.algorithms.RandomPolicy;
 import org.unibuc.algorithms.RoundRobinPolicy;
+import org.unibuc.algorithms.WeightedRoundRobinPolicy;
 import org.unibuc.core.LoadBalancingPolicy;
 
 import java.util.List;
@@ -19,9 +22,9 @@ class LoadBalancingPolicyTest {
     @BeforeEach
     void setUp() {
         vms = List.of(
-                new VmSimple(1000, 1),
-                new VmSimple(1000, 1),
-                new VmSimple(1000, 1)
+                new VmSimple(0, 1000, 1),
+                new VmSimple(1, 1000, 1),
+                new VmSimple(2, 1000, 1)
         );
     }
 
@@ -123,12 +126,102 @@ class LoadBalancingPolicyTest {
     }
 
     @Test
+    void lrt_prefersObservedLatencyInsteadOfVmMips() {
+        Vm lowMipsButFast = new VmSimple(10, 100, 1);
+        Vm highMipsButSlow = new VmSimple(11, 10_000, 1);
+        LeastReponseTimePolicy policy = new LeastReponseTimePolicy();
+
+        policy.onRequestComplete(lowMipsButFast, 1.0);
+        policy.onRequestComplete(highMipsButSlow, 10.0);
+
+        Vm selected = policy.selectVm(
+                List.of(lowMipsButFast, highMipsButSlow), 0, "x");
+
+        assertEquals(lowMipsButFast, selected,
+                "LRT must use observed latency, not the VM's configured MIPS");
+    }
+
+    @Test
+    void lrt_usesArithmeticMeanAndActiveRequests() {
+        Vm vm0 = vms.get(0);
+        Vm vm1 = vms.get(1);
+        LeastReponseTimePolicy policy = new LeastReponseTimePolicy();
+
+        policy.onRequestComplete(vm0, 1.0);
+        policy.onRequestComplete(vm0, 3.0); // mean = 2.0
+        policy.onRequestComplete(vm1, 2.5);
+
+        assertEquals(vm0, policy.selectVm(List.of(vm0, vm1), 0, "x"));
+        assertEquals(vm1, policy.selectVm(List.of(vm0, vm1), 1, "x"),
+                "An active request must increase the selected VM's score");
+    }
+
+    @Test
+    void lrt_reset_forgetsObservedHistory() {
+        Vm vm0 = vms.get(0);
+        Vm vm1 = vms.get(1);
+        LeastReponseTimePolicy policy = new LeastReponseTimePolicy();
+
+        policy.onRequestComplete(vm0, 10.0);
+        policy.onRequestComplete(vm1, 1.0);
+        assertEquals(vm1, policy.selectVm(List.of(vm0, vm1), 0, "x"));
+
+        policy.reset();
+        assertEquals(vm0, policy.selectVm(List.of(vm0, vm1), 0, "x"),
+                "After reset, both VMs must start with neutral history");
+    }
+
+    @Test
+    void p2cLrt_usesObservedLatencyForItsTwoChoices() {
+        Vm lowMipsButFast = new VmSimple(10, 100, 1);
+        Vm highMipsButSlow = new VmSimple(11, 10_000, 1);
+        P2CLRTPolicy policy = new P2CLRTPolicy(2, 42L);
+
+        policy.onRequestComplete(lowMipsButFast, 1.0);
+        policy.onRequestComplete(highMipsButSlow, 10.0);
+
+        Vm selected = policy.selectVm(
+                List.of(lowMipsButFast, highMipsButSlow), 0, "x");
+
+        assertEquals(lowMipsButFast, selected,
+                "P2C-LRT must compare observed scores, not configured MIPS");
+    }
+
+    @Test
+    void adaptiveWrr_assignsMoreRequestsToObservedFastVm() {
+        Vm fast = vms.get(0);
+        Vm slow = vms.get(1);
+        WeightedRoundRobinPolicy policy = new WeightedRoundRobinPolicy();
+        policy.onRequestComplete(fast, 1.0);
+        policy.onRequestComplete(slow, 10.0);
+
+        int fastSelections = 0;
+        int slowSelections = 0;
+        for (int i = 0; i < 200; i++) {
+            Vm selected = policy.selectVm(List.of(fast, slow), i, "x");
+            if (selected.equals(fast)) {
+                fastSelections++;
+                policy.onRequestComplete(selected, 1.0);
+            } else {
+                slowSelections++;
+                policy.onRequestComplete(selected, 10.0);
+            }
+        }
+
+        assertTrue(fastSelections > slowSelections,
+                "Adaptive WRR must learn a larger effective weight for the faster VM");
+    }
+
+    @Test
     void allPolicies_throwOnEmptyVmList() {
         List<LoadBalancingPolicy> policies = List.of(
                 new RoundRobinPolicy(),
+                new WeightedRoundRobinPolicy(),
                 new LeastConnectionsPolicy(),
                 new IpHashPolicy(),
-                new RandomPolicy()
+                new RandomPolicy(),
+                new LeastReponseTimePolicy(),
+                new P2CLRTPolicy()
         );
         for (LoadBalancingPolicy p : policies) {
             assertThrows(IllegalStateException.class,
@@ -137,4 +230,3 @@ class LoadBalancingPolicyTest {
         }
     }
 }
- 

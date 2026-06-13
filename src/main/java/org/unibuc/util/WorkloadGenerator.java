@@ -12,6 +12,17 @@ public class WorkloadGenerator {
     }
 
     public Workload generateWorkload(int count, int uniqueIps) {
+        return generateWorkload(
+                count,
+                uniqueIps,
+                SimulationConfig.MEAN_INTERARRIVAL_TIME_SECONDS
+        );
+    }
+
+    public Workload generateWorkload(
+            int count,
+            int uniqueIps,
+            double meanInterarrivalTimeSeconds) {
         List<String> sourceIps = generateSourceIps(count, uniqueIps);
         List<Long> cloudletLengths = generateCloudletLengths(count);
         List<Workload.Request> requests = new ArrayList<>(count);
@@ -19,7 +30,7 @@ public class WorkloadGenerator {
         double arrivalTime = SimulationConfig.FIRST_REQUEST_TIME;
         for (int i = 0; i < count; i++) {
             if (i > 0) {
-                arrivalTime += randomExponential(SimulationConfig.MEAN_INTERARRIVAL_TIME_SECONDS);
+                arrivalTime += randomExponential(meanInterarrivalTimeSeconds);
             }
             requests.add(new Workload.Request(
                     i,
