@@ -3,7 +3,6 @@ package org.unibuc.util;
 import org.cloudsimplus.cloudlets.Cloudlet;
 import org.cloudsimplus.cloudlets.CloudletSimple;
 import org.cloudsimplus.utilizationmodels.UtilizationModel;
-import org.cloudsimplus.utilizationmodels.UtilizationModelDynamic;
 import org.cloudsimplus.utilizationmodels.UtilizationModelFull;
 import org.unibuc.core.SimulationConfig;
 
@@ -43,10 +42,6 @@ public class Workload {
             cloudlet.setUtilizationModelBw(UtilizationModel.NULL);
 
             /*
-             * Previous RAM/BW utilization retained for reference. Under heavy
-             * skew, queued cloudlets reserved simulated bandwidth and could
-             * prevent the final load experiment from completing:
-             *
              * cloudlet.setUtilizationModelRam(new UtilizationModelDynamic(0.01));
              * cloudlet.setUtilizationModelBw(new UtilizationModelDynamic(0.01));
              */

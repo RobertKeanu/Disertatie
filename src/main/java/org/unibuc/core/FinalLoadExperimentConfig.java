@@ -2,10 +2,7 @@ package org.unibuc.core;
 
 import java.util.List;
 
-/**
- * Configuration for the final progressive-load experiment.
- * The original SimulationConfig remains the source of infrastructure values.
- */
+
 public final class FinalLoadExperimentConfig {
     public static final int CLOUDLET_COUNT = 10_000;
     public static final int RUNS_PER_ALGORITHM = 5;
@@ -13,14 +10,6 @@ public final class FinalLoadExperimentConfig {
     public static final long BASE_WORKLOAD_SEED = 20_000L;
     public static final long BASE_POLICY_SEED = 30_000L;
 
-    /*
-     * Pessimistic sensitivity scenario for a centralized load balancer that
-     * queries VM state sequentially from a remote monitoring layer. This is
-     * deliberately not the cost of scanning an in-memory Java collection.
-     *
-     * selection overhead =
-     * base + inspected VMs * state read + comparisons * comparison cost
-     */
     public static final double SELECTION_BASE_OVERHEAD_MICROSECONDS = 100.0;
     public static final double VM_STATE_READ_OVERHEAD_MICROSECONDS = 100_000.0;
     public static final double VM_COMPARISON_OVERHEAD_MICROSECONDS = 50.0;
@@ -85,10 +74,6 @@ public final class FinalLoadExperimentConfig {
         return overheadMicroseconds / 1_000_000.0;
     }
 
-    /**
-     * Estimates total dispatcher latency using an M/D/1 queue:
-     * service time + waiting time caused by serialized selection decisions.
-     */
     public static double estimatedSelectionLatencySeconds(
             String algorithmName,
             double requestsPerSecond) {

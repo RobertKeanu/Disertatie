@@ -6,10 +6,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Stores only information that a real load balancer can observe online.
- * It deliberately does not read VM MIPS or cloudlet length.
- */
 final class ObservedBackendStats {
     private static final double DEFAULT_LATENCY_SECONDS = 1.0;
     private static final double MIN_LATENCY_SECONDS = 1.0e-6;
@@ -55,7 +51,6 @@ final class ObservedBackendStats {
     }
 
     double score(Vm vm) {
-        // score = arithmetic mean latency * current load multiplier
         return averageLatencySeconds(vm) * (activeRequests(vm) + 1.0);
     }
 

@@ -170,9 +170,6 @@ public class P2CLRTPolicy implements LoadBalancingPolicy {
     }
 
     /*
-     * Previous capacity-aware implementation retained for comparison.
-     * It estimated queued service time from exact cloudlet MI and VM MIPS.
-     *
      * private static final double ALPHA = 0.5;
      * private static final double INITIAL_EMA_MS = 100.0;
      * private final int D;

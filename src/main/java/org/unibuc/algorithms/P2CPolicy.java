@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
-//Power Of 2 Choices Policy
 public class P2CPolicy implements LoadBalancingPolicy {
     private final Random random = new Random();
     private long seed;
@@ -27,7 +26,6 @@ public class P2CPolicy implements LoadBalancingPolicy {
         if (availableVms.isEmpty()) throw new IllegalStateException("No VMs available");
         if (availableVms.size() == 1) return availableVms.getFirst();
 
-        // Pick two distinct VMs at random
         int idxA = random.nextInt(availableVms.size());
         int idxB;
         do {

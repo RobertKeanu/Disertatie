@@ -4,15 +4,6 @@ import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics;
 
 import java.util.List;
 
-/**
- * Aggregates MetricsCollector results across multiple simulation runs
- * for a single algorithm and computes mean ± standard deviation for
- * every metric.
- *
- * This is what gives your dissertation statistical credibility —
- * reporting mean ± σ across N runs proves results are stable and
- * not artefacts of one particular random seed.
- */
 public class AggregatedMetrics {
 
     private final String algorithmName;
@@ -46,7 +37,6 @@ public class AggregatedMetrics {
         }
     }
 
-    // ── Getters ───────────────────────────────────────────────────────────────
 
     public String getAlgorithmName() { return algorithmName; }
     public int    getRuns()          { return runs; }
@@ -82,7 +72,6 @@ public class AggregatedMetrics {
     public double getCompletedRequestsStdDev() { return completedRequests.getStandardDeviation(); }
     public double getCompletedRequestsMin()    { return completedRequests.getMin(); }
 
-    // ── Console output ────────────────────────────────────────────────────────
 
     @Override
     public String toString() {

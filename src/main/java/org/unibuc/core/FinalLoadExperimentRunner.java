@@ -178,7 +178,6 @@ public class FinalLoadExperimentRunner {
                     ));
                 }
 
-                // Checkpoint after each algorithm, including partial load levels.
                 exporter.export(allResults, failures);
                 System.out.printf(
                         "  Checkpoint saved after %s at load %s.%n",

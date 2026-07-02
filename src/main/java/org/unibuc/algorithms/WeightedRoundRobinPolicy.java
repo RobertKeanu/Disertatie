@@ -115,9 +115,6 @@ public class WeightedRoundRobinPolicy implements LoadBalancingPolicy {
     }
 
     /*
-     * Previous static, capacity-aware implementation retained for comparison.
-     * Its weights were configured in the same ratio as VM MIPS values.
-     *
      * private final int[] weights;
      * private int[] currentWeights;
      *

@@ -127,10 +127,6 @@ public class LeastReponseTimePolicy implements LoadBalancingPolicy {
     }
 
     /*
-     * Previous capacity-aware implementation retained for comparison.
-     * It used exact cloudlet MI and VM MIPS, information that is no longer
-     * available to the active implementation.
-     *
      * private static final double ALPHA = 0.5;
      * private static final double INITIAL_EMA_MS = 100.0;
      * private final Map<Long, Integer> activeConnections = new ConcurrentHashMap<>();

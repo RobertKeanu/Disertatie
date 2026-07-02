@@ -246,10 +246,6 @@ public class SimulationRunner {
         );
     }
 
-    /**
-     * Reuses the original simulation setup for additional experiments without
-     * changing the behavior of the existing main experiment.
-     */
     public static MetricsCollector runSimulationForExperiment(
             LoadBalancingPolicy policy,
             Workload workload) {
