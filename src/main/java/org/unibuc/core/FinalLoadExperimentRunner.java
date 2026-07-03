@@ -61,21 +61,11 @@ public class FinalLoadExperimentRunner {
         List<LoadExperimentFailure> failures = new ArrayList<>();
         Set<String> disabledAlgorithms = new HashSet<>();
         LoadSweepResultsExporter exporter = new LoadSweepResultsExporter(outputDir);
-        int totalSimulations = FinalLoadExperimentConfig.LOAD_LEVELS.size()
-                * POLICY_FACTORIES.size()
-                * runsPerAlgorithm;
-        int completedSimulations = 0;
-
-        printConfiguration(cloudletCount, runsPerAlgorithm, totalSimulations, outputDir);
+        printConfiguration(cloudletCount);
 
         for (FinalLoadExperimentConfig.LoadLevel loadLevel
                 : FinalLoadExperimentConfig.LOAD_LEVELS) {
-            System.out.printf(
-                    "%n=== Load %s: %.4f req/s, mean interarrival %.4f s ===%n",
-                    loadLevel.label(),
-                    loadLevel.targetRequestsPerSecond(),
-                    loadLevel.meanInterarrivalTimeSeconds()
-            );
+            System.out.println("\nLoad " + loadLevel.label());
 
             for (PolicyFactory factory : POLICY_FACTORIES) {
                 if (disabledAlgorithms.contains(factory.name())) {
@@ -90,10 +80,8 @@ public class FinalLoadExperimentRunner {
                             0
                     ));
                     exporter.export(allResults, failures);
-                    System.out.printf(
-                            "  SKIP      %-32s disabled after an earlier timeout.%n",
-                            factory.name()
-                    );
+                    System.out.printf("SKIP %-27s %,d/%,d requests%n",
+                            factory.name(), 0, cloudletCount);
                     continue;
                 }
 
@@ -113,14 +101,7 @@ public class FinalLoadExperimentRunner {
                             );
 
                     policy.reset(policySeed);
-                    System.out.printf(
-                            "  START     %-32s run %d/%d (overall next %d/%d)%n",
-                            factory.name(),
-                            run + 1,
-                            runsPerAlgorithm,
-                            completedSimulations + 1,
-                            totalSimulations
-                    );
+                    printRequestCount(factory.name(), 0, cloudletCount);
                     long runWallStart = System.nanoTime();
                     MetricsCollector metrics =
                             SimulationRunner.runSimulationForExperiment(policy, workload);
@@ -128,18 +109,10 @@ public class FinalLoadExperimentRunner {
                             (System.nanoTime() - runWallStart) / 1_000_000_000.0;
                     runResults.add(metrics);
 
-                    completedSimulations++;
-                    System.out.printf(
-                            "  [%3d/%3d] %-32s run %d/%d: completed=%d, "
-                                    + "latency=%.3f s, p99=%.3f s%n",
-                            completedSimulations,
-                            totalSimulations,
+                    printRequestCount(
                             factory.name(),
-                            run + 1,
-                            runsPerAlgorithm,
                             metrics.getTotalRequests(),
-                            metrics.getAverageLatency(),
-                            metrics.getP99Latency()
+                            cloudletCount
                     );
 
                     if (metrics.getTotalRequests() < cloudletCount) {
@@ -156,8 +129,7 @@ public class FinalLoadExperimentRunner {
                         disabledAlgorithms.add(factory.name());
                         incomplete = true;
                         System.out.printf(
-                                "  FAILED    %s completed %,d/%,d requests. "
-                                        + "Remaining runs will be skipped.%n",
+                                "FAILED %-24s %,d/%,d requests%n",
                                 factory.name(),
                                 metrics.getTotalRequests(),
                                 cloudletCount
@@ -179,14 +151,7 @@ public class FinalLoadExperimentRunner {
                 }
 
                 exporter.export(allResults, failures);
-                System.out.printf(
-                        "  Checkpoint saved after %s at load %s.%n",
-                        factory.name(),
-                        loadLevel.label()
-                );
             }
-
-            System.out.println("Saved results through load level " + loadLevel.label());
         }
 
         System.out.println("\nFinal load experiment completed.");
@@ -194,33 +159,21 @@ public class FinalLoadExperimentRunner {
         return List.copyOf(allResults);
     }
 
-    private static void printConfiguration(
-            int cloudletCount,
-            int runsPerAlgorithm,
-            int totalSimulations,
-            String outputDir) {
+    private static void printConfiguration(int cloudletCount) {
         System.out.println("Final progressive-load experiment");
         System.out.println("Cloudlets per simulation : " + cloudletCount);
-        System.out.println("Runs per algorithm       : " + runsPerAlgorithm);
-        System.out.println("VMs                      : " + SimulationConfig.VM_COUNT);
+    }
+
+    private static void printRequestCount(
+            String algorithmName,
+            int completedRequests,
+            int expectedRequests) {
         System.out.printf(
-                "Full-scan selection cost : %.3f ms/request%n",
-                FinalLoadExperimentConfig.estimatedSelectionServiceTimeSeconds(
-                        "Least Response Time"
-                ) * 1_000.0
+                "%-32s %,d/%,d requests%n",
+                algorithmName,
+                completedRequests,
+                expectedRequests
         );
-        System.out.printf(
-                "Two-choice selection cost: %.3f ms/request%n",
-                FinalLoadExperimentConfig.estimatedSelectionServiceTimeSeconds(
-                        "P2C-LRT Hybrid"
-                ) * 1_000.0
-        );
-        System.out.printf(
-                "Theoretical capacity     : %.4f requests/s%n",
-                FinalLoadExperimentConfig.theoreticalCapacityRequestsPerSecond()
-        );
-        System.out.println("Total simulations        : " + totalSimulations);
-        System.out.println("Output directory         : " + outputDir);
     }
 
     private record PolicyFactory(

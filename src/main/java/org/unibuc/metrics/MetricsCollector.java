@@ -177,8 +177,8 @@ public class MetricsCollector {
                 │  Avg queue wait     : %.2f s
                 │  p95 latency        : %.2f s
                 │  p99 latency        : %.2f s
-                │  Load imbalance σ   : %.2f s
-                │  Request imbalance σ: %.2f
+                │  Load imbalance    : %.2f s
+                │  Request imbalance : %.2f
                 │  Raw work imbalance : %.2f MI
                 └────────────────────────────────────────
                 """,

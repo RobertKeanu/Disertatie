@@ -14,7 +14,8 @@ public class LeastReponseTimePolicy implements LoadBalancingPolicy {
     private static final double EPSILON = 1.0e-9;
 
     private final ObservedBackendStats stats = new ObservedBackendStats();
-    private final Map<Long, Double> directOutstandingServiceTime = new HashMap<>();
+    private final Map<Long, Double> directOutstandingServiceTime =
+            new HashMap<>();
     private boolean directModeActive;
     private int tieBreaker;
 
@@ -69,11 +70,7 @@ public class LeastReponseTimePolicy implements LoadBalancingPolicy {
         }
 
         Vm selected = candidates.get(Math.floorMod(tieBreaker++, candidates.size()));
-        directOutstandingServiceTime.merge(
-                selected.getId(),
-                directEstimatedServiceTime(selected, cloudletLength),
-                Double::sum
-        );
+        directRequestStarted(selected, cloudletLength);
         return selected;
     }
 
@@ -91,16 +88,7 @@ public class LeastReponseTimePolicy implements LoadBalancingPolicy {
             return;
         }
 
-        long vmId = cloudlet.getVm().getId();
-        double completedServiceTime =
-                directEstimatedServiceTime(cloudlet.getVm(), cloudlet.getLength());
-        directOutstandingServiceTime.compute(
-                vmId,
-                (key, value) -> Math.max(
-                        0,
-                        (value == null ? 0 : value) - completedServiceTime
-                )
-        );
+        directRequestCompleted(cloudlet);
     }
 
     @Override
@@ -118,84 +106,32 @@ public class LeastReponseTimePolicy implements LoadBalancingPolicy {
 
     private double directScore(Vm vm, long cloudletLength) {
         return directOutstandingServiceTime.getOrDefault(vm.getId(), 0.0)
-                + directEstimatedServiceTime(vm, cloudletLength);
+                + estimatedServiceTime(vm, cloudletLength);
     }
 
-    private double directEstimatedServiceTime(Vm vm, long cloudletLength) {
+    private void directRequestStarted(Vm vm, long cloudletLength) {
+        directOutstandingServiceTime.merge(
+                vm.getId(),
+                estimatedServiceTime(vm, cloudletLength),
+                Double::sum
+        );
+    }
+
+    private void directRequestCompleted(Cloudlet cloudlet) {
+        long vmId = cloudlet.getVm().getId();
+        double completedServiceTime =
+                estimatedServiceTime(cloudlet.getVm(), cloudlet.getLength());
+        directOutstandingServiceTime.compute(
+                vmId,
+                (key, value) -> Math.max(
+                        0,
+                        (value == null ? 0 : value) - completedServiceTime
+                )
+        );
+    }
+
+    private double estimatedServiceTime(Vm vm, long cloudletLength) {
         double mips = Math.max(1.0, vm.getProcessor().getMips());
         return Math.max(0, cloudletLength) / mips;
     }
-
-    /*
-     * private static final double ALPHA = 0.5;
-     * private static final double INITIAL_EMA_MS = 100.0;
-     * private final Map<Long, Integer> activeConnections = new ConcurrentHashMap<>();
-     * private final Map<Long, Double> emaResponseTime = new ConcurrentHashMap<>();
-     * private final Map<Long, Double> outstandingServiceTime = new ConcurrentHashMap<>();
-     *
-     * @Override
-     * public Vm selectVm(List<Vm> availableVms, int requestIndex, String sourceIp,
-     *                    long cloudletLength, double arrivalTime) {
-     *     if (availableVms.isEmpty()) {
-     *         throw new IllegalStateException("No VMs available");
-     *     }
-     *
-     *     double minScore = Double.MAX_VALUE;
-     *     List<Vm> candidates = new ArrayList<>();
-     *     for (Vm vm : availableVms) {
-     *         double vmScore = score(vm, cloudletLength);
-     *         if (vmScore < minScore - EPSILON) {
-     *             minScore = vmScore;
-     *             candidates.clear();
-     *             candidates.add(vm);
-     *         } else if (Math.abs(vmScore - minScore) <= EPSILON) {
-     *             candidates.add(vm);
-     *         }
-     *     }
-     *     Vm selected = candidates.get(Math.floorMod(tieBreaker++, candidates.size()));
-     *     activeConnections.merge(selected.getId(), 1, Integer::sum);
-     *     outstandingServiceTime.merge(
-     *             selected.getId(),
-     *             estimatedServiceTime(selected, cloudletLength),
-     *             Double::sum
-     *     );
-     *     return selected;
-     * }
-     *
-     * @Override
-     * public void onRequestComplete(Vm vm, double responseTimeSeconds) {
-     *     long id = vm.getId();
-     *     double previous = emaResponseTime.getOrDefault(id, INITIAL_EMA_MS);
-     *     double updated = ALPHA * (responseTimeSeconds * 1000.0)
-     *             + (1.0 - ALPHA) * previous;
-     *     emaResponseTime.put(id, updated);
-     *     activeConnections.computeIfPresent(id, (key, value) -> value > 0 ? value - 1 : 0);
-     * }
-     *
-     * @Override
-     * public void onRequestComplete(Cloudlet cloudlet, double responseTimeSeconds) {
-     *     onRequestComplete(cloudlet.getVm(), responseTimeSeconds);
-     *     long id = cloudlet.getVm().getId();
-     *     double completedServiceTime =
-     *             estimatedServiceTime(cloudlet.getVm(), cloudlet.getLength());
-     *     outstandingServiceTime.compute(
-     *             id,
-     *             (key, value) -> Math.max(0, (value == null ? 0 : value) - completedServiceTime)
-     *     );
-     * }
-     *
-     * private double score(Vm vm, long cloudletLength) {
-     *     double queuedServiceTime =
-     *             outstandingServiceTime.getOrDefault(vm.getId(), 0.0);
-     *     return queuedServiceTime + estimatedServiceTime(vm, cloudletLength);
-     * }
-     *
-     * private double estimatedServiceTime(Vm vm, long cloudletLength) {
-     *     if (cloudletLength <= 0) {
-     *         return emaResponseTime.getOrDefault(vm.getId(), INITIAL_EMA_MS) / 1000.0;
-     *     }
-     *     double mips = Math.max(1.0, vm.getProcessor().getMips());
-     *     return cloudletLength / mips;
-     * }
-     */
 }

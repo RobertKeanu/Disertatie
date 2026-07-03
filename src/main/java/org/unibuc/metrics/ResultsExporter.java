@@ -17,6 +17,7 @@ import java.awt.*;
 import java.io.*;
 import java.nio.file.*;
 import java.util.List;
+import java.util.function.ToDoubleFunction;
 
 public class ResultsExporter {
 
@@ -94,30 +95,33 @@ public class ResultsExporter {
     }
 
     private void writeThroughputChart(List<MetricsCollector> results) throws IOException {
-        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
-        for (MetricsCollector m : results) {
-            dataset.addValue(m.getThroughput(), "Throughput", shortenName(m.getAlgorithmName()));
-        }
-        saveChart(styledBarChart("","Algorithm", "Requests/s", dataset),
-                "throughput_chart.png", CHART_WIDTH, CHART_HEIGHT);
+        writeSingleMetricChart(
+                results,
+                "throughput_chart.png",
+                "Throughput",
+                "Requests/s",
+                MetricsCollector::getThroughput
+        );
     }
 
     private void writeImbalanceChart(List<MetricsCollector> results) throws IOException {
-        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
-        for (MetricsCollector m : results) {
-            dataset.addValue(m.getNormalizedLoadImbalance(), "Load Imbalance", shortenName(m.getAlgorithmName()));
-        }
-        saveChart(styledBarChart("", "Algorithm", "Service-Time Std Dev (s)", dataset),
-                "imbalance_chart.png", CHART_WIDTH, CHART_HEIGHT);
+        writeSingleMetricChart(
+                results,
+                "imbalance_chart.png",
+                "Load Imbalance",
+                "Service-Time Std Dev (s)",
+                MetricsCollector::getNormalizedLoadImbalance
+        );
     }
 
     private void writeWorkImbalanceChart(List<MetricsCollector> results) throws IOException {
-        DefaultCategoryDataset dataset = new DefaultCategoryDataset();
-        for (MetricsCollector m : results) {
-            dataset.addValue(m.getWorkImbalance(), "Work Imbalance", shortenName(m.getAlgorithmName()));
-        }
-        saveChart(styledBarChart("", "Algorithm", "MI Std Dev", dataset),
-                "work_imbalance_chart.png", CHART_WIDTH, CHART_HEIGHT);
+        writeSingleMetricChart(
+                results,
+                "work_imbalance_chart.png",
+                "Work Imbalance",
+                "MI Std Dev",
+                MetricsCollector::getWorkImbalance
+        );
     }
 
     public void exportAggregated(List<AggregatedMetrics> results) throws IOException {
@@ -180,7 +184,7 @@ public class ResultsExporter {
                 dataset.add(a.getP99LatencyMean(), a.getP99LatencyStdDev(), "p99", name);
             } else if (normalizedLabel.contains("work")) {
                 dataset.add(a.getWorkImbalanceMean(), a.getWorkImbalanceStdDev(), "Work Imbalance", name);
-            } else if (normalizedLabel.contains("imbalance") || yLabel.contains("σ")) {
+            } else if (normalizedLabel.contains("imbalance") || yLabel.contains("")) {
                 dataset.add(a.getImbalanceMean(), a.getImbalanceStdDev(), "Request Imbalance", name);
             } else if (normalizedLabel.contains("requests/s") || normalizedLabel.contains("throughput")) {
                 dataset.add(a.getThroughputMean(), a.getThroughputStdDev(), "Throughput", name);
@@ -293,13 +297,38 @@ public class ResultsExporter {
         File file = Paths.get(outputDir, filename).toFile();
         ChartUtils.saveChartAsPNG(file, chart, width, height);
     }
+
     private void writeMakespanChart(List<MetricsCollector> results) throws IOException {
+        writeSingleMetricChart(
+                results,
+                "makespan_chart.png",
+                "Makespan",
+                "Seconds",
+                MetricsCollector::getMakespan
+        );
+    }
+
+    private void writeSingleMetricChart(
+            List<MetricsCollector> results,
+            String filename,
+            String seriesName,
+            String yLabel,
+            ToDoubleFunction<MetricsCollector> valueExtractor)
+            throws IOException {
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
         for (MetricsCollector m : results) {
-            dataset.addValue(m.getMakespan(), "Makespan", shortenName(m.getAlgorithmName()));
+            dataset.addValue(
+                    valueExtractor.applyAsDouble(m),
+                    seriesName,
+                    shortenName(m.getAlgorithmName())
+            );
         }
-        saveChart(styledBarChart("", "Algorithm", "Seconds", dataset),
-                "makespan_chart.png", CHART_WIDTH, CHART_HEIGHT);
+        saveChart(
+                styledBarChart("", "Algorithm", yLabel, dataset),
+                filename,
+                CHART_WIDTH,
+                CHART_HEIGHT
+        );
     }
 
     private String shortenName(String name) {

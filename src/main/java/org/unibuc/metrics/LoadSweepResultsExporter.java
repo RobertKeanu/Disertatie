@@ -16,6 +16,7 @@ import org.unibuc.core.FinalLoadExperimentConfig;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -190,16 +191,52 @@ public class LoadSweepResultsExporter {
             ToDoubleFunction<AggregatedMetrics> meanExtractor,
             ToDoubleFunction<AggregatedMetrics> stdDevExtractor) throws IOException {
 
-        YIntervalSeriesCollection dataset = new YIntervalSeriesCollection();
-        Map<String, List<LoadScenarioResult>> byAlgorithm = groupByAlgorithm(results);
+        YIntervalSeriesCollection dataset = buildDataset(
+                results,
+                result -> meanExtractor.applyAsDouble(result.metrics()),
+                stdDevExtractor
+        );
+        writeLineChart(filename, title, yAxisLabel, dataset);
+    }
 
-        for (Map.Entry<String, List<LoadScenarioResult>> entry : byAlgorithm.entrySet()) {
-            YIntervalSeries series = new YIntervalSeries(shortenName(entry.getKey()));
-            List<LoadScenarioResult> orderedResults = new ArrayList<>(entry.getValue());
-            orderedResults.sort(Comparator.comparingDouble(LoadScenarioResult::loadPercentage));
+    private void writeLatencyWithSelectionOverheadChart(
+            List<LoadScenarioResult> results) throws IOException {
+        YIntervalSeriesCollection dataset = buildDataset(
+                results,
+                this::latencyWithSelectionOverhead,
+                AggregatedMetrics::getAvgLatencyStdDev
+        );
+        writeLineChart(
+                "average_latency_with_selection_overhead_vs_load.png",
+                "Latency with overhead",
+                "Latency (s)",
+                dataset
+        );
+    }
+
+    private YIntervalSeriesCollection buildDataset(
+            List<LoadScenarioResult> results,
+            ToDoubleFunction<LoadScenarioResult> meanExtractor,
+            ToDoubleFunction<AggregatedMetrics> stdDevExtractor) {
+        YIntervalSeriesCollection dataset = new YIntervalSeriesCollection();
+        Map<String, List<LoadScenarioResult>> byAlgorithm =
+                groupByAlgorithm(results);
+
+        for (Map.Entry<String, List<LoadScenarioResult>> entry
+                : byAlgorithm.entrySet()) {
+            String algorithmName = entry.getKey();
+            String shortName = shortenName(algorithmName);
+            YIntervalSeries series = new YIntervalSeries(shortName);
+            List<LoadScenarioResult> orderedResults =
+                    new ArrayList<>(entry.getValue());
+            orderedResults.sort(
+                    Comparator.comparingDouble(
+                            LoadScenarioResult::loadPercentage
+                    )
+            );
 
             for (LoadScenarioResult result : orderedResults) {
-                double mean = meanExtractor.applyAsDouble(result.metrics());
+                double mean = meanExtractor.applyAsDouble(result);
                 double stdDev = stdDevExtractor.applyAsDouble(result.metrics());
                 series.add(
                         result.loadPercentage(),
@@ -208,9 +245,24 @@ public class LoadSweepResultsExporter {
                         mean + stdDev
                 );
             }
+
             dataset.addSeries(series);
         }
+        return dataset;
+    }
 
+    private double latencyWithSelectionOverhead(LoadScenarioResult result) {
+        return result.metrics().getAvgLatencyMean()
+                + FinalLoadExperimentConfig.estimatedSelectionServiceTimeSeconds(
+                        result.metrics().getAlgorithmName()
+                );
+    }
+
+    private void writeLineChart(
+            String filename,
+            String title,
+            String yAxisLabel,
+            YIntervalSeriesCollection dataset) throws IOException {
         JFreeChart chart = ChartFactory.createXYLineChart(
                 title,
                 "Target load (%)",
@@ -221,106 +273,12 @@ public class LoadSweepResultsExporter {
                 true,
                 false
         );
-
-        chart.setBackgroundPaint(Color.WHITE);
-        XYPlot plot = chart.getXYPlot();
-        plot.setBackgroundPaint(Color.WHITE);
-        plot.setDomainGridlinePaint(new Color(220, 220, 220));
-        plot.setRangeGridlinePaint(new Color(220, 220, 220));
-
-        XYErrorRenderer renderer = new XYErrorRenderer();
-        renderer.setDrawXError(false);
-        renderer.setDrawYError(true);
-        renderer.setDefaultLinesVisible(true);
-        renderer.setDefaultShapesVisible(true);
-        renderer.setCapLength(5.0);
-        renderer.setErrorPaint(Color.DARK_GRAY);
-        renderer.setErrorStroke(new BasicStroke(1.0f));
-
-        for (int seriesIndex = 0; seriesIndex < dataset.getSeriesCount(); seriesIndex++) {
-            Color color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length];
-            renderer.setSeriesPaint(seriesIndex, color);
-            renderer.setSeriesStroke(seriesIndex, new BasicStroke(2.0f));
-        }
-        plot.setRenderer(renderer);
-
-        NumberAxis loadAxis = (NumberAxis) plot.getDomainAxis();
-        loadAxis.setRange(20, 115);
-        loadAxis.setTickUnit(new NumberTickUnit(10));
-        ((NumberAxis) plot.getRangeAxis()).setAutoRangeIncludesZero(true);
-
-        chart.getTitle().setFont(TITLE_FONT);
-        if (chart.getLegend() != null) {
-            chart.getLegend().setItemFont(LEGEND_FONT);
-        }
-        plot.getDomainAxis().setLabelFont(AXIS_LABEL_FONT);
-        plot.getDomainAxis().setTickLabelFont(TICK_LABEL_FONT);
-        plot.getRangeAxis().setLabelFont(AXIS_LABEL_FONT);
-        plot.getRangeAxis().setTickLabelFont(TICK_LABEL_FONT);
-
-        ChartUtils.saveChartAsPNG(
-                Paths.get(outputDir, filename).toFile(),
-                chart,
-                1200,
-                700
-        );
-    }
-
-    private void writeLatencyWithSelectionOverheadChart(
-            List<LoadScenarioResult> results) throws IOException {
-        YIntervalSeriesCollection adjustedLatencyDataset =
-                new YIntervalSeriesCollection();
-        Map<String, List<LoadScenarioResult>> byAlgorithm =
-                groupByAlgorithm(results);
-
-        for (Map.Entry<String, List<LoadScenarioResult>> entry
-                : byAlgorithm.entrySet()) {
-            String algorithmName = entry.getKey();
-            String shortName = shortenName(algorithmName);
-            YIntervalSeries adjustedLatency = new YIntervalSeries(shortName);
-            List<LoadScenarioResult> orderedResults =
-                    new ArrayList<>(entry.getValue());
-            orderedResults.sort(
-                    Comparator.comparingDouble(
-                            LoadScenarioResult::loadPercentage
-                    )
-            );
-
-            for (LoadScenarioResult result : orderedResults) {
-                double overheadSeconds =
-                        FinalLoadExperimentConfig.estimatedSelectionServiceTimeSeconds(
-                                algorithmName
-                        );
-                double mean = result.metrics().getAvgLatencyMean()
-                        + overheadSeconds;
-                double stdDev = result.metrics().getAvgLatencyStdDev();
-                adjustedLatency.add(
-                        result.loadPercentage(),
-                        mean,
-                        Math.max(0, mean - stdDev),
-                        mean + stdDev
-                );
-            }
-
-            adjustedLatencyDataset.addSeries(adjustedLatency);
-        }
-
-        JFreeChart chart = ChartFactory.createXYLineChart(
-                "Latency with overhead",
-                "Target load (%)",
-                "Latency (s)",
-                adjustedLatencyDataset,
-                PlotOrientation.VERTICAL,
-                true,
-                true,
-                false
-        );
         chart.setBackgroundPaint(Color.WHITE);
         XYPlot plot = chart.getXYPlot();
         configurePlot(plot);
 
         XYErrorRenderer renderer =
-                createMetricRenderer(adjustedLatencyDataset, true);
+                createMetricRenderer(dataset, true);
         plot.setRenderer(renderer);
 
         NumberAxis loadAxis = (NumberAxis) plot.getDomainAxis();
@@ -336,15 +294,7 @@ public class LoadSweepResultsExporter {
             chart.getLegend().setItemFont(LEGEND_FONT);
         }
 
-        ChartUtils.saveChartAsPNG(
-                Paths.get(
-                        outputDir,
-                        "average_latency_with_selection_overhead_vs_load.png"
-                ).toFile(),
-                chart,
-                1200,
-                700
-        );
+        saveChartWithRetry(chart, filename, 1200, 700);
     }
 
     private XYErrorRenderer createMetricRenderer(
@@ -379,6 +329,36 @@ public class LoadSweepResultsExporter {
         axis.setAutoRangeIncludesZero(true);
         axis.setLabelFont(AXIS_LABEL_FONT);
         axis.setTickLabelFont(TICK_LABEL_FONT);
+    }
+
+    private void saveChartWithRetry(
+            JFreeChart chart,
+            String filename,
+            int width,
+            int height) throws IOException {
+        File target = Paths.get(outputDir, filename).toFile();
+        IOException lastFailure = null;
+
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            try {
+                ChartUtils.saveChartAsPNG(target, chart, width, height);
+                return;
+            } catch (IOException e) {
+                lastFailure = e;
+                sleepBeforeRetry(attempt);
+            }
+        }
+
+        throw lastFailure;
+    }
+
+    private void sleepBeforeRetry(int attempt) throws IOException {
+        try {
+            Thread.sleep(150L * attempt);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while retrying chart export", e);
+        }
     }
 
     private Map<String, List<LoadScenarioResult>> groupByAlgorithm(

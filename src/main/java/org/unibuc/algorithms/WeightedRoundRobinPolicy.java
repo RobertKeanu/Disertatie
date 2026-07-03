@@ -18,29 +18,9 @@ public class WeightedRoundRobinPolicy implements LoadBalancingPolicy {
 
     @Override
     public Vm selectVm(List<Vm> availableVms, int requestIndex, String sourceIp) {
-        if (availableVms.isEmpty()) {
-            throw new IllegalStateException("No VMs available");
-        }
-
+        ensureVmsAvailable(availableVms);
         stats.ensureVms(availableVms);
-        int[] weights = calculateDynamicWeights(availableVms);
-        int totalWeight = 0;
-        Vm selected = availableVms.getFirst();
-        int selectedCurrentWeight = Integer.MIN_VALUE;
-
-        for (int i = 0; i < availableVms.size(); i++) {
-            Vm vm = availableVms.get(i);
-            int weight = weights[i];
-            totalWeight += weight;
-
-            int currentWeight = currentWeights.merge(vm.getId(), weight, Integer::sum);
-            if (currentWeight > selectedCurrentWeight) {
-                selected = vm;
-                selectedCurrentWeight = currentWeight;
-            }
-        }
-
-        currentWeights.merge(selected.getId(), -totalWeight, Integer::sum);
+        Vm selected = selectAdaptiveVm(availableVms);
         stats.requestStarted(selected);
         return selected;
     }
@@ -51,22 +31,45 @@ public class WeightedRoundRobinPolicy implements LoadBalancingPolicy {
         if (!SimulationConfig.USE_DIRECT_POLICY_INFORMATION) {
             return selectVm(availableVms, requestIndex, sourceIp);
         }
-        if (availableVms.isEmpty()) {
-            throw new IllegalStateException("No VMs available");
-        }
+        ensureVmsAvailable(availableVms);
         if (directCurrentWeights.length != availableVms.size()) {
             directCurrentWeights = new int[availableVms.size()];
         }
 
+        return selectDirectWeightedVm(availableVms);
+    }
+
+    private Vm selectAdaptiveVm(List<Vm> availableVms) {
+        int[] weights = calculateDynamicWeights(availableVms);
+        int totalWeight = 0;
+        Vm selected = availableVms.getFirst();
+        int selectedCurrentWeight = Integer.MIN_VALUE;
+
+        for (int i = 0; i < availableVms.size(); i++) {
+            Vm vm = availableVms.get(i);
+            int weight = weights[i];
+            totalWeight += weight;
+
+            int currentWeight = currentWeights.merge(
+                    vm.getId(),
+                    weight,
+                    Integer::sum
+            );
+            if (currentWeight > selectedCurrentWeight) {
+                selected = vm;
+                selectedCurrentWeight = currentWeight;
+            }
+        }
+
+        currentWeights.merge(selected.getId(), -totalWeight, Integer::sum);
+        return selected;
+    }
+
+    private Vm selectDirectWeightedVm(List<Vm> availableVms) {
         int totalWeight = 0;
         int selectedIndex = 0;
         for (int i = 0; i < availableVms.size(); i++) {
-            int weight = Math.max(
-                    1,
-                    SimulationConfig.WRR_WEIGHTS[
-                            i % SimulationConfig.WRR_WEIGHTS.length
-                    ]
-            );
+            int weight = directWeight(i);
             totalWeight += weight;
             directCurrentWeights[i] += weight;
             if (directCurrentWeights[i] > directCurrentWeights[selectedIndex]) {
@@ -78,6 +81,15 @@ public class WeightedRoundRobinPolicy implements LoadBalancingPolicy {
         return availableVms.get(selectedIndex);
     }
 
+    private int directWeight(int vmIndex) {
+        return Math.max(
+                1,
+                SimulationConfig.WRR_WEIGHTS[
+                        vmIndex % SimulationConfig.WRR_WEIGHTS.length
+                ]
+        );
+    }
+
     @Override
     public void onRequestComplete(Vm vm, double responseTimeSeconds) {
         stats.requestCompleted(vm, responseTimeSeconds);
@@ -85,9 +97,7 @@ public class WeightedRoundRobinPolicy implements LoadBalancingPolicy {
 
     @Override
     public String getName() {
-        return SimulationConfig.USE_DIRECT_POLICY_INFORMATION
-                ? "Weighted Round Robin"
-                : "Adaptive Weighted Round Robin";
+        return  "Weighted Round Robin";
     }
 
     @Override
@@ -114,50 +124,9 @@ public class WeightedRoundRobinPolicy implements LoadBalancingPolicy {
         return weights;
     }
 
-    /*
-     * private final int[] weights;
-     * private int[] currentWeights;
-     *
-     * public WeightedRoundRobinPolicy() {
-     *     this.weights = SimulationConfig.WRR_WEIGHTS;
-     *     this.currentWeights = new int[0];
-     * }
-     *
-     * @Override
-     * public Vm selectVm(List<Vm> availableVms, int requestIndex, String sourceIp) {
-     *     if (availableVms.isEmpty()) {
-     *         throw new IllegalStateException("No VMs available");
-     *     }
-     *
-     *     if (currentWeights.length != availableVms.size()) {
-     *         currentWeights = new int[availableVms.size()];
-     *     }
-     *
-     *     int totalWeight = 0;
-     *     int selectedIndex = 0;
-     *     for (int i = 0; i < availableVms.size(); i++) {
-     *         int weight = effectiveWeight(i);
-     *         totalWeight += weight;
-     *         currentWeights[i] += weight;
-     *         if (currentWeights[i] > currentWeights[selectedIndex]) {
-     *             selectedIndex = i;
-     *         }
-     *     }
-     *
-     *     currentWeights[selectedIndex] -= totalWeight;
-     *     return availableVms.get(selectedIndex);
-     * }
-     *
-     * @Override
-     * public void reset() {
-     *     Arrays.fill(currentWeights, 0);
-     * }
-     *
-     * private int effectiveWeight(int vmIndex) {
-     *     if (weights.length == 0) {
-     *         return 1;
-     *     }
-     *     return Math.max(1, weights[vmIndex % weights.length]);
-     * }
-     */
+    private void ensureVmsAvailable(List<Vm> availableVms) {
+        if (availableVms.isEmpty()) {
+            throw new IllegalStateException("No VMs available");
+        }
+    }
 }

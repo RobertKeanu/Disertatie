@@ -60,16 +60,14 @@ public class SimulationRunner {
         List<MetricsCollector> singleRunResults = new ArrayList<>();
 
         for (LoadBalancingPolicy policy : loadBalancingAlgorithms) {
-            System.out.println("Running: " + policy.getName() + " ...");
+            printRequestCount(policy.getName(), 0, SimulationConfig.CLOUDLET_COUNT);
             policy.reset(SINGLE_RUN_POLICY_SEED);
 
             MetricsCollector metrics = runSimulation(policy, singleRunWorkload);
             singleRunResults.add(metrics);
-            System.out.println(metrics);
         }
 
-        System.out.println("\n═══ Multi-run phase ("
-                + SimulationConfig.RUNS_PER_ALGORITHM + " runs each) ═══\n");
+        System.out.println("\nMulti-run phase");
 
         Map<String, List<MetricsCollector>> perAlgoRuns = new LinkedHashMap<>();
         List<Workload> workloads = new ArrayList<>(SimulationConfig.RUNS_PER_ALGORITHM);
@@ -82,8 +80,7 @@ public class SimulationRunner {
             List<MetricsCollector> runs = new ArrayList<>();
 
             for (int run = 0; run < SimulationConfig.RUNS_PER_ALGORITHM; run++) {
-                System.out.printf("  %-40s  [run %d/%d]%n",
-                        policy.getName(), run + 1, SimulationConfig.RUNS_PER_ALGORITHM);
+                printRequestCount(policy.getName(), 0, SimulationConfig.CLOUDLET_COUNT);
 
                 policy.reset(BASE_POLICY_SEED + run);
                 runs.add(runSimulation(policy, workloads.get(run)));
@@ -102,8 +99,12 @@ public class SimulationRunner {
 
         exporter.exportAggregated(aggregated);
 
-        System.out.println("\n═══ Aggregated results ═══");
-        aggregated.forEach(System.out::println);
+        System.out.println("\nRequest counts");
+        aggregated.forEach(result -> printRequestCount(
+                result.getAlgorithmName(),
+                (int) Math.round(result.getCompletedRequestsMean()),
+                SimulationConfig.CLOUDLET_COUNT
+        ));
     }
 
     private static MetricsCollector runSimulation(
@@ -125,39 +126,16 @@ public class SimulationRunner {
 
         AtomicInteger completedCloudlets = new AtomicInteger();
         AtomicLong lastProgressNanos = new AtomicLong(wallClockStart);
-        List<Cloudlet> cloudlets = workload.createCloudlets();
-        cloudlets.forEach(cloudlet -> cloudlet.addOnFinishListener(
-                info -> {
-                    notifyCompletion(policy, info.getCloudlet());
-                    int completed = completedCloudlets.incrementAndGet();
-                    lastProgressNanos.set(System.nanoTime());
-                    if (completed % SimulationConfig.PROGRESS_INTERVAL == 0
-                            || completed == cloudlets.size()) {
-                        printSimulationProgress(
-                                policy.getName(),
-                                completed,
-                                cloudlets.size(),
-                                wallClockStart
-                        );
-                    }
-                }
-        ));
+        List<Cloudlet> cloudlets = createTrackedCloudlets(
+                policy,
+                workload,
+                completedCloudlets,
+                lastProgressNanos
+        );
 
         List<Vm> availableVms = new ArrayList<>(vms);
-        broker.setVmMapper(cloudlet -> {
-            int requestIndex = Math.toIntExact(cloudlet.getJobId());
-            Workload.Request request = workload.getRequest(requestIndex);
-            if (SimulationConfig.USE_DIRECT_POLICY_INFORMATION) {
-                return policy.selectVm(
-                        availableVms,
-                        requestIndex,
-                        request.sourceIp(),
-                        request.cloudletLength(),
-                        request.arrivalTime()
-                );
-            }
-            return policy.selectVm(availableVms, requestIndex, request.sourceIp());
-        });
+        broker.setVmMapper(cloudlet ->
+                selectVmForCloudlet(policy, workload, availableVms, cloudlet));
 
         new WorkloadSubmitter(simulation, broker, workload, cloudlets);
         ScheduledExecutorService heartbeat = startHeartbeat(
@@ -165,8 +143,7 @@ public class SimulationRunner {
                 policy.getName(),
                 completedCloudlets,
                 lastProgressNanos,
-                cloudlets.size(),
-                wallClockStart
+                cloudlets.size()
         );
         try {
             simulation.start();
@@ -178,13 +155,68 @@ public class SimulationRunner {
         return new MetricsCollector(policy.getName(), finished, vms);
     }
 
+    private static List<Cloudlet> createTrackedCloudlets(
+            LoadBalancingPolicy policy,
+            Workload workload,
+            AtomicInteger completedCloudlets,
+            AtomicLong lastProgressNanos) {
+        List<Cloudlet> cloudlets = workload.createCloudlets();
+        cloudlets.forEach(cloudlet -> cloudlet.addOnFinishListener(info -> {
+            Cloudlet finishedCloudlet = info.getCloudlet();
+            notifyCompletion(policy, finishedCloudlet);
+            recordCompletionProgress(
+                    policy.getName(),
+                    completedCloudlets,
+                    lastProgressNanos,
+                    cloudlets.size()
+            );
+        }));
+        return cloudlets;
+    }
+
+    private static void recordCompletionProgress(
+            String algorithmName,
+            AtomicInteger completedCloudlets,
+            AtomicLong lastProgressNanos,
+            int totalCloudlets) {
+        int completed = completedCloudlets.incrementAndGet();
+        lastProgressNanos.set(System.nanoTime());
+        if (completed % SimulationConfig.PROGRESS_INTERVAL == 0
+                || completed == totalCloudlets) {
+            printSimulationProgress(
+                    algorithmName,
+                    completed,
+                    totalCloudlets
+            );
+        }
+    }
+
+    private static Vm selectVmForCloudlet(
+            LoadBalancingPolicy policy,
+            Workload workload,
+            List<Vm> availableVms,
+            Cloudlet cloudlet) {
+        int requestIndex = Math.toIntExact(cloudlet.getJobId());
+        Workload.Request request = workload.getRequest(requestIndex);
+        if (!SimulationConfig.USE_DIRECT_POLICY_INFORMATION) {
+            return policy.selectVm(availableVms, requestIndex, request.sourceIp());
+        }
+
+        return policy.selectVm(
+                availableVms,
+                requestIndex,
+                request.sourceIp(),
+                request.cloudletLength(),
+                request.arrivalTime()
+        );
+    }
+
     private static ScheduledExecutorService startHeartbeat(
             CloudSimPlus simulation,
             String algorithmName,
             AtomicInteger completedCloudlets,
             AtomicLong lastProgressNanos,
-            int totalCloudlets,
-            long wallClockStart) {
+            int totalCloudlets) {
         ScheduledExecutorService heartbeat =
                 Executors.newSingleThreadScheduledExecutor(runnable -> {
                     Thread thread = new Thread(runnable, "simulation-progress");
@@ -205,8 +237,7 @@ public class SimulationRunner {
                     printSimulationProgress(
                             algorithmName,
                             completedCloudlets.get(),
-                            totalCloudlets,
-                            wallClockStart
+                            totalCloudlets
                     );
 
                     double stalledSeconds = (System.nanoTime() - lastProgressNanos.get())
@@ -214,10 +245,8 @@ public class SimulationRunner {
                     if (stalledSeconds >= maxNoProgressSeconds
                             && abortRequested.compareAndSet(false, true)) {
                         System.out.printf(
-                                "    TIMEOUT  %-28s no completion for %.1f s; "
-                                        + "aborting this simulation at %,d/%,d completed.%n",
+                                "TIMEOUT %-24s %,d/%,d requests%n",
                                 algorithmName,
-                                stalledSeconds,
                                 completedCloudlets.get(),
                                 totalCloudlets
                         );
@@ -234,15 +263,19 @@ public class SimulationRunner {
     private static void printSimulationProgress(
             String algorithmName,
             int completed,
-            int total,
-            long wallClockStart) {
-        double elapsedSeconds = (System.nanoTime() - wallClockStart) / 1_000_000_000.0;
+            int total) {
+        printRequestCount(algorithmName, completed, total);
+    }
+
+    private static void printRequestCount(
+            String algorithmName,
+            int completedRequests,
+            int expectedRequests) {
         System.out.printf(
-                "    progress %-28s %,d/%,d completed, wall time %.1f s%n",
+                "%-32s %,d/%,d requests%n",
                 algorithmName,
-                completed,
-                total,
-                elapsedSeconds
+                completedRequests,
+                expectedRequests
         );
     }
 
