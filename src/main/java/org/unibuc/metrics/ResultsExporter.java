@@ -90,8 +90,10 @@ public class ResultsExporter {
             dataset.addValue(m.getP95Latency(),     "p95 Latency", name);
             dataset.addValue(m.getP99Latency(),     "p99 Latency", name);
         }
-        saveChart(styledBarChart("", "Algorithm", "Time (s)", dataset),
-                "latency_chart.png", CHART_WIDTH, CHART_HEIGHT);
+        saveChart(
+                styledBarChart("", "Algorithm", "Time (s)", dataset),
+                "latency_chart.png"
+        );
     }
 
     private void writeThroughputChart(List<MetricsCollector> results) throws IOException {
@@ -216,7 +218,7 @@ public class ResultsExporter {
         );
 
         applyChartFonts(chart);
-        saveChart(chart, filename, CHART_WIDTH, CHART_HEIGHT);
+        saveChart(chart, filename);
     }
 
     private JFreeChart styledBarChart(String title, String xLabel, String yLabel,
@@ -292,10 +294,9 @@ public class ResultsExporter {
         return AVG_LATENCY_COLOR;
     }
 
-    private void saveChart(JFreeChart chart, String filename, int width, int height)
-            throws IOException {
+    private void saveChart(JFreeChart chart, String filename) throws IOException {
         File file = Paths.get(outputDir, filename).toFile();
-        ChartUtils.saveChartAsPNG(file, chart, width, height);
+        ChartUtils.saveChartAsPNG(file, chart, CHART_WIDTH, CHART_HEIGHT);
     }
 
     private void writeMakespanChart(List<MetricsCollector> results) throws IOException {
@@ -325,9 +326,7 @@ public class ResultsExporter {
         }
         saveChart(
                 styledBarChart("", "Algorithm", yLabel, dataset),
-                filename,
-                CHART_WIDTH,
-                CHART_HEIGHT
+                filename
         );
     }
 

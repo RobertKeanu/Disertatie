@@ -111,12 +111,9 @@ public class SimulationRunner {
             LoadBalancingPolicy policy,
             Workload workload) {
 
-        long wallClockStart = System.nanoTime();
         CloudSimPlus simulation = new CloudSimPlus();
 
-        List<Host> hosts = createHosts();
-
-        new DatacenterSimple(simulation, hosts);
+        new DatacenterSimple(simulation, createHosts());
 
         DatacenterBrokerSimple broker = new DatacenterBrokerSimple(simulation);
         broker.setShutdownWhenIdle(false);
@@ -125,7 +122,7 @@ public class SimulationRunner {
         broker.submitVmList(vms);
 
         AtomicInteger completedCloudlets = new AtomicInteger();
-        AtomicLong lastProgressNanos = new AtomicLong(wallClockStart);
+        AtomicLong lastProgressNanos = new AtomicLong(System.nanoTime());
         List<Cloudlet> cloudlets = createTrackedCloudlets(
                 policy,
                 workload,
@@ -162,8 +159,7 @@ public class SimulationRunner {
             AtomicLong lastProgressNanos) {
         List<Cloudlet> cloudlets = workload.createCloudlets();
         cloudlets.forEach(cloudlet -> cloudlet.addOnFinishListener(info -> {
-            Cloudlet finishedCloudlet = info.getCloudlet();
-            notifyCompletion(policy, finishedCloudlet);
+            notifyCompletion(policy, info.getCloudlet());
             recordCompletionProgress(
                     policy.getName(),
                     completedCloudlets,
@@ -183,11 +179,7 @@ public class SimulationRunner {
         lastProgressNanos.set(System.nanoTime());
         if (completed % SimulationConfig.PROGRESS_INTERVAL == 0
                 || completed == totalCloudlets) {
-            printSimulationProgress(
-                    algorithmName,
-                    completed,
-                    totalCloudlets
-            );
+            printRequestCount(algorithmName, completed, totalCloudlets);
         }
     }
 
@@ -234,11 +226,10 @@ public class SimulationRunner {
         AtomicBoolean abortRequested = new AtomicBoolean();
         heartbeat.scheduleAtFixedRate(
                 () -> {
-                    printSimulationProgress(
+                    printRequestCount(
                             algorithmName,
                             completedCloudlets.get(),
-                            totalCloudlets
-                    );
+                            totalCloudlets);
 
                     double stalledSeconds = (System.nanoTime() - lastProgressNanos.get())
                             / 1_000_000_000.0;
@@ -258,13 +249,6 @@ public class SimulationRunner {
                 TimeUnit.SECONDS
         );
         return heartbeat;
-    }
-
-    private static void printSimulationProgress(
-            String algorithmName,
-            int completed,
-            int total) {
-        printRequestCount(algorithmName, completed, total);
     }
 
     private static void printRequestCount(

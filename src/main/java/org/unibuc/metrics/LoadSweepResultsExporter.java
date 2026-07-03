@@ -32,6 +32,8 @@ import java.util.function.ToDoubleFunction;
 
 public class LoadSweepResultsExporter {
 
+    private static final int CHART_WIDTH = 1200;
+    private static final int CHART_HEIGHT = 700;
     private static final Font TITLE_FONT = new Font("SansSerif", Font.BOLD, 33);
     private static final Font AXIS_LABEL_FONT = new Font("SansSerif", Font.BOLD, 26);
     private static final Font TICK_LABEL_FONT = new Font("SansSerif", Font.PLAIN, 22);
@@ -294,7 +296,7 @@ public class LoadSweepResultsExporter {
             chart.getLegend().setItemFont(LEGEND_FONT);
         }
 
-        saveChartWithRetry(chart, filename, 1200, 700);
+        saveChartWithRetry(chart, filename);
     }
 
     private XYErrorRenderer createMetricRenderer(
@@ -333,15 +335,13 @@ public class LoadSweepResultsExporter {
 
     private void saveChartWithRetry(
             JFreeChart chart,
-            String filename,
-            int width,
-            int height) throws IOException {
+            String filename) throws IOException {
         File target = Paths.get(outputDir, filename).toFile();
         IOException lastFailure = null;
 
         for (int attempt = 1; attempt <= 5; attempt++) {
             try {
-                ChartUtils.saveChartAsPNG(target, chart, width, height);
+                ChartUtils.saveChartAsPNG(target, chart, CHART_WIDTH, CHART_HEIGHT);
                 return;
             } catch (IOException e) {
                 lastFailure = e;

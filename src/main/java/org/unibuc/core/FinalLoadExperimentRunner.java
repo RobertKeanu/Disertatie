@@ -36,15 +36,11 @@ public class FinalLoadExperimentRunner {
     );
 
     public static void main(String[] args) throws IOException {
-        boolean smokeMode = List.of(args).contains("--smoke");
-        int cloudletCount = smokeMode ? 200 : FinalLoadExperimentConfig.CLOUDLET_COUNT;
-        int runsPerAlgorithm = smokeMode ? 1 : FinalLoadExperimentConfig.RUNS_PER_ALGORITHM;
-        String outputDir = smokeMode
-                ? "results/final_load_test_smoke_"
-                        + SimulationConfig.VM_COUNT + "_vms"
-                : FinalLoadExperimentConfig.OUTPUT_DIR;
-
-        runExperiment(cloudletCount, runsPerAlgorithm, outputDir);
+        runExperiment(
+                FinalLoadExperimentConfig.CLOUDLET_COUNT,
+                FinalLoadExperimentConfig.RUNS_PER_ALGORITHM,
+                FinalLoadExperimentConfig.OUTPUT_DIR
+        );
     }
 
     static List<LoadScenarioResult> runExperiment(

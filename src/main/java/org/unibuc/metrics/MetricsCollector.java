@@ -88,24 +88,15 @@ public class MetricsCollector {
     }
 
     public double getRequestImbalance() {
-        if (requestsPerVm.isEmpty()) return 0;
-        DescriptiveStatistics stats = new DescriptiveStatistics();
-        requestsPerVm.values().forEach(v -> stats.addValue(v));
-        return stats.getStandardDeviation();
+        return standardDeviation(requestsPerVm.values());
     }
 
     public double getNormalizedLoadImbalance() {
-        if (serviceTimePerVm.isEmpty()) return 0;
-        DescriptiveStatistics stats = new DescriptiveStatistics();
-        serviceTimePerVm.values().forEach(v -> stats.addValue(v));
-        return stats.getStandardDeviation();
+        return standardDeviation(serviceTimePerVm.values());
     }
 
     public double getWorkImbalance() {
-        if (workPerVm.isEmpty()) return 0;
-        DescriptiveStatistics stats = new DescriptiveStatistics();
-        workPerVm.values().forEach(v -> stats.addValue(v));
-        return stats.getStandardDeviation();
+        return standardDeviation(workPerVm.values());
     }
 
     public Map<Long, Integer> getRequestsPerVm() {
@@ -152,6 +143,16 @@ public class MetricsCollector {
         long pes = Math.max(1, cloudlet.getPesNumber());
         double allocatedMips = Math.max(1.0, mipsPerPe * pes);
         return cloudlet.getTotalLength() / allocatedMips;
+    }
+
+    private double standardDeviation(Collection<? extends Number> values) {
+        if (values.isEmpty()) {
+            return 0;
+        }
+
+        DescriptiveStatistics stats = new DescriptiveStatistics();
+        values.forEach(value -> stats.addValue(value.doubleValue()));
+        return stats.getStandardDeviation();
     }
 
     private double getArrivalTime(Cloudlet cloudlet) {

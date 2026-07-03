@@ -9,19 +9,32 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.unibuc.core.LoadBalancingPolicy.clearObservedStats;
+import static org.unibuc.core.LoadBalancingPolicy.ensureObservedVms;
+import static org.unibuc.core.LoadBalancingPolicy.observedRequestCompleted;
+import static org.unibuc.core.LoadBalancingPolicy.observedRequestStarted;
+import static org.unibuc.core.LoadBalancingPolicy.observedScore;
+
 public class WeightedRoundRobinPolicy implements LoadBalancingPolicy {
     private static final int MAX_DYNAMIC_WEIGHT = 10;
 
-    private final ObservedBackendStats stats = new ObservedBackendStats();
+    private final Map<Long, Integer> activeRequests = new HashMap<>();
+    private final Map<Long, Double> latencySums = new HashMap<>();
+    private final Map<Long, Long> completedRequests = new HashMap<>();
     private final Map<Long, Integer> currentWeights = new HashMap<>();
     private int[] directCurrentWeights = new int[0];
 
     @Override
     public Vm selectVm(List<Vm> availableVms, int requestIndex, String sourceIp) {
         ensureVmsAvailable(availableVms);
-        stats.ensureVms(availableVms);
+        ensureObservedVms(
+                availableVms,
+                activeRequests,
+                latencySums,
+                completedRequests
+        );
         Vm selected = selectAdaptiveVm(availableVms);
-        stats.requestStarted(selected);
+        observedRequestStarted(selected, activeRequests);
         return selected;
     }
 
@@ -92,17 +105,23 @@ public class WeightedRoundRobinPolicy implements LoadBalancingPolicy {
 
     @Override
     public void onRequestComplete(Vm vm, double responseTimeSeconds) {
-        stats.requestCompleted(vm, responseTimeSeconds);
+        observedRequestCompleted(
+                vm,
+                responseTimeSeconds,
+                activeRequests,
+                latencySums,
+                completedRequests
+        );
     }
 
     @Override
     public String getName() {
-        return  "Weighted Round Robin";
+        return "Weighted Round Robin";
     }
 
     @Override
     public void reset() {
-        stats.reset();
+        clearObservedStats(activeRequests, latencySums, completedRequests);
         currentWeights.clear();
         Arrays.fill(directCurrentWeights, 0);
     }
@@ -112,7 +131,12 @@ public class WeightedRoundRobinPolicy implements LoadBalancingPolicy {
         double maxQuality = 0;
 
         for (int i = 0; i < availableVms.size(); i++) {
-            qualities[i] = 1.0 / stats.score(availableVms.get(i));
+            qualities[i] = 1.0 / observedScore(
+                    availableVms.get(i),
+                    activeRequests,
+                    latencySums,
+                    completedRequests
+            );
             maxQuality = Math.max(maxQuality, qualities[i]);
         }
 

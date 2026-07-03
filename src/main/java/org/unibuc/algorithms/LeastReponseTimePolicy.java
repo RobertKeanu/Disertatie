@@ -10,10 +10,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.unibuc.core.LoadBalancingPolicy.clearObservedStats;
+import static org.unibuc.core.LoadBalancingPolicy.ensureObservedVms;
+import static org.unibuc.core.LoadBalancingPolicy.observedRequestCompleted;
+import static org.unibuc.core.LoadBalancingPolicy.observedRequestStarted;
+import static org.unibuc.core.LoadBalancingPolicy.observedScore;
+
 public class LeastReponseTimePolicy implements LoadBalancingPolicy {
     private static final double EPSILON = 1.0e-9;
 
-    private final ObservedBackendStats stats = new ObservedBackendStats();
+    private final Map<Long, Integer> activeRequests = new HashMap<>();
+    private final Map<Long, Double> latencySums = new HashMap<>();
+    private final Map<Long, Long> completedRequests = new HashMap<>();
     private final Map<Long, Double> directOutstandingServiceTime =
             new HashMap<>();
     private boolean directModeActive;
@@ -25,12 +33,22 @@ public class LeastReponseTimePolicy implements LoadBalancingPolicy {
             throw new IllegalStateException("No VMs available");
         }
 
-        stats.ensureVms(availableVms);
+        ensureObservedVms(
+                availableVms,
+                activeRequests,
+                latencySums,
+                completedRequests
+        );
         double minScore = Double.MAX_VALUE;
         List<Vm> candidates = new ArrayList<>();
 
         for (Vm vm : availableVms) {
-            double vmScore = stats.score(vm);
+            double vmScore = observedScore(
+                    vm,
+                    activeRequests,
+                    latencySums,
+                    completedRequests
+            );
             if (vmScore < minScore - EPSILON) {
                 minScore = vmScore;
                 candidates.clear();
@@ -41,7 +59,7 @@ public class LeastReponseTimePolicy implements LoadBalancingPolicy {
         }
 
         Vm selected = candidates.get(Math.floorMod(tieBreaker++, candidates.size()));
-        stats.requestStarted(selected);
+        observedRequestStarted(selected, activeRequests);
         return selected;
     }
 
@@ -77,14 +95,26 @@ public class LeastReponseTimePolicy implements LoadBalancingPolicy {
     @Override
     public void onRequestComplete(Vm vm, double responseTimeSeconds) {
         if (!directModeActive) {
-            stats.requestCompleted(vm, responseTimeSeconds);
+            observedRequestCompleted(
+                    vm,
+                    responseTimeSeconds,
+                    activeRequests,
+                    latencySums,
+                    completedRequests
+            );
         }
     }
 
     @Override
     public void onRequestComplete(Cloudlet cloudlet, double responseTimeSeconds) {
         if (!directModeActive) {
-            stats.requestCompleted(cloudlet.getVm(), responseTimeSeconds);
+            observedRequestCompleted(
+                    cloudlet.getVm(),
+                    responseTimeSeconds,
+                    activeRequests,
+                    latencySums,
+                    completedRequests
+            );
             return;
         }
 
@@ -98,7 +128,7 @@ public class LeastReponseTimePolicy implements LoadBalancingPolicy {
 
     @Override
     public void reset() {
-        stats.reset();
+        clearObservedStats(activeRequests, latencySums, completedRequests);
         directOutstandingServiceTime.clear();
         directModeActive = false;
         tieBreaker = 0;

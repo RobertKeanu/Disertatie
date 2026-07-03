@@ -14,9 +14,17 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
+import static org.unibuc.core.LoadBalancingPolicy.clearObservedStats;
+import static org.unibuc.core.LoadBalancingPolicy.ensureObservedVms;
+import static org.unibuc.core.LoadBalancingPolicy.observedRequestCompleted;
+import static org.unibuc.core.LoadBalancingPolicy.observedRequestStarted;
+import static org.unibuc.core.LoadBalancingPolicy.observedScore;
+
 public class P2CLRTPolicy implements LoadBalancingPolicy {
     private final Random random = new Random();
-    private final ObservedBackendStats stats = new ObservedBackendStats();
+    private final Map<Long, Integer> activeRequests = new HashMap<>();
+    private final Map<Long, Double> latencySums = new HashMap<>();
+    private final Map<Long, Long> completedRequests = new HashMap<>();
     private final Map<Long, Double> directOutstandingServiceTime =
             new HashMap<>();
     private final int choices;
@@ -42,21 +50,36 @@ public class P2CLRTPolicy implements LoadBalancingPolicy {
             throw new IllegalStateException("No VMs available");
         }
 
-        stats.ensureVms(availableVms);
+        ensureObservedVms(
+                availableVms,
+                activeRequests,
+                latencySums,
+                completedRequests
+        );
         List<Vm> sampledVms = sampleDistinct(availableVms);
         Vm selected = sampledVms.getFirst();
-        double minScore = stats.score(selected);
+        double minScore = observedScore(
+                selected,
+                activeRequests,
+                latencySums,
+                completedRequests
+        );
 
         for (int i = 1; i < sampledVms.size(); i++) {
             Vm candidate = sampledVms.get(i);
-            double candidateScore = stats.score(candidate);
+            double candidateScore = observedScore(
+                    candidate,
+                    activeRequests,
+                    latencySums,
+                    completedRequests
+            );
             if (candidateScore < minScore) {
                 minScore = candidateScore;
                 selected = candidate;
             }
         }
 
-        stats.requestStarted(selected);
+        observedRequestStarted(selected, activeRequests);
         return selected;
     }
 
@@ -90,14 +113,26 @@ public class P2CLRTPolicy implements LoadBalancingPolicy {
     @Override
     public void onRequestComplete(Vm vm, double responseTimeSeconds) {
         if (!directModeActive) {
-            stats.requestCompleted(vm, responseTimeSeconds);
+            observedRequestCompleted(
+                    vm,
+                    responseTimeSeconds,
+                    activeRequests,
+                    latencySums,
+                    completedRequests
+            );
         }
     }
 
     @Override
     public void onRequestComplete(Cloudlet cloudlet, double responseTimeSeconds) {
         if (!directModeActive) {
-            stats.requestCompleted(cloudlet.getVm(), responseTimeSeconds);
+            observedRequestCompleted(
+                    cloudlet.getVm(),
+                    responseTimeSeconds,
+                    activeRequests,
+                    latencySums,
+                    completedRequests
+            );
             return;
         }
 
@@ -111,7 +146,7 @@ public class P2CLRTPolicy implements LoadBalancingPolicy {
 
     @Override
     public void reset() {
-        stats.reset();
+        clearObservedStats(activeRequests, latencySums, completedRequests);
         directOutstandingServiceTime.clear();
         directModeActive = false;
         random.setSeed(seed);
@@ -120,7 +155,7 @@ public class P2CLRTPolicy implements LoadBalancingPolicy {
     @Override
     public void reset(long seed) {
         this.seed = seed;
-        stats.reset();
+        clearObservedStats(activeRequests, latencySums, completedRequests);
         directOutstandingServiceTime.clear();
         directModeActive = false;
         random.setSeed(seed);
